@@ -16,17 +16,23 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#import "TargetConditionals.h"
-
-#if !TARGET_OS_TV
-
 #import <Foundation/Foundation.h>
 
-@interface FBSDKAddressFilterManager : NSObject
+NS_ASSUME_NONNULL_BEGIN
 
-+ (void)enable;
-+ (nullable NSDictionary<NSString *, id> *)processParameters:(nullable NSDictionary<NSString *, id> *)parameters;
+/**
+ Used for capturing performance metrics.
+
+ To use: Create a Date object marking the start time of what you want to capture.
+ When you call `record:startTime:` the time spent will be the time of
+ recording minus the start time.
+
+ - Note: This is essentially a name-spaced pass-through to `FBSDKMonitor`.
+ */
+@interface FBSDKPerformanceMonitor : NSObject
+
++ (void)record:(NSString *)name startTime:(NSDate *)startTime;
 
 @end
 
-#endif
+NS_ASSUME_NONNULL_END

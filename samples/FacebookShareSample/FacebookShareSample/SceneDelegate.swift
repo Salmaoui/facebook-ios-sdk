@@ -16,22 +16,25 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#import "TargetConditionals.h"
 
-#if !TARGET_OS_TV
+import FacebookCore
+import UIKit
 
-#import <Foundation/Foundation.h>
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
-NS_ASSUME_NONNULL_BEGIN
+    var window: UIWindow?
 
-@interface FBSDKAddressInferencer : NSObject
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        guard let context = URLContexts.first else {
+            fatalError("Open url called without a context. This should never happen.")
+        }
 
-+ (void)initializeDenseFeature;
-+ (void)loadWeightsForKey:(NSString *)useCaseKey;
-+ (BOOL)shouldFilterParam:(nullable NSString *)param;
+        ApplicationDelegate.shared.application(
+            UIApplication.shared,
+            open: context.url,
+            sourceApplication: nil,
+            annotation: nil
+        )
+    }
 
-@end
-
-NS_ASSUME_NONNULL_END
-
-#endif
+}

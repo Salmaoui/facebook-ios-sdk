@@ -20,23 +20,25 @@
 
 #if !TARGET_OS_TV
 
-#import "FBSDKAddressInferencer.h"
+#import "FBSDKIntegrityInferencer.h"
 
 #import "FBSDKModelManager.h"
 #import "FBSDKModelParser.h"
 #import "FBSDKModelRuntime.hpp"
 #import "FBSDKModelUtility.h"
-#import "FBSDKStandaloneModel.hpp"
+#import "FBSDKMLMacros.h"
+#import "FBSDKTensor.hpp"
 
 #include<stdexcept>
 
-static NSString *const MODEL_INFO_KEY= @"com.facebook.sdk:FBSDKModelInfo";
-static NSString *const THRESHOLDS_KEY = @"thresholds";
-static NSString *const DATA_DETECTION_ADDRESS_KEY = @"DATA_DETECTION_ADDRESS";
+@implementation FBSDKIntegrityInferencer : NSObject
 
-@implementation FBSDKAddressInferencer : NSObject
+static NSString *const INTEGRITY_NONE = @"none";
+static NSString *const INTEGRITY_ADDRESS = @"address";
+static NSString *const INTEGRITY_HEALTH = @"health";
 
-static std::unordered_map<std::string, mat::MTensor> _weights;
+static NSString *_useCase;
+static std::unordered_map<std::string, fbsdk::MTensor> _weights;
 static std::vector<float> _denseFeature;
 
 + (void)initializeDenseFeature
@@ -46,21 +48,21 @@ static std::vector<float> _denseFeature;
   _denseFeature = dense_feature;
 }
 
-+ (void)loadWeightsForKey:(NSString *)useCaseKey
++ (void)loadWeightsForKey:(NSString *)useCase
 {
-  NSString *path = [FBSDKModelManager getWeightsPath:useCaseKey];
-  if (!path) {
-    return;
-  }
-  NSData *latestData = [NSData dataWithContentsOfFile:path
-                                              options:NSDataReadingMappedIfSafe
-                                                error:nil];
-  if (!latestData) {
-    return;
-  }
-  std::unordered_map<std::string, mat::MTensor> weights = [FBSDKModelParser parseWeightsData:latestData];
-  if ([FBSDKModelParser validateWeights:weights forTask:FBSDKMTMLTaskAddressDetect]) {
-    _weights = weights;
+  @synchronized (self) {
+    if (_useCase) {
+      return;
+    }
+    NSData *data = [FBSDKModelManager getWeightsForKey:useCase];
+    if (!data) {
+      return;
+    }
+    std::unordered_map<std::string, fbsdk::MTensor> weights = [FBSDKModelParser parseWeightsData:data];
+    if ([FBSDKModelParser validateWeights:weights forKey:useCase]) {
+      _useCase = useCase;
+      _weights = weights;
+    }
   }
 }
 
@@ -69,32 +71,38 @@ static std::vector<float> _denseFeature;
   if (!param || _weights.size() == 0 || _denseFeature.size() == 0) {
     return false;
   }
-
+  NSArray<NSString *> *integrityMapping = [self getIntegrityMapping];
   NSString *text = [FBSDKModelUtility normalizeText:param];
   const char *bytes = [text UTF8String];
   if ((int)strlen(bytes) == 0) {
     return false;
   }
-  float *predictedRaw;
-  NSMutableDictionary<NSString *, id> *modelInfo = [[NSUserDefaults standardUserDefaults] objectForKey:MODEL_INFO_KEY];
-  if (!modelInfo) {
+  NSArray *thresholds = [FBSDKModelManager getThresholdsForKey:_useCase];
+  if (thresholds.count != integrityMapping.count) {
     return false;
   }
-  NSDictionary<NSString *, id> * addressModelInfo = [modelInfo objectForKey:DATA_DETECTION_ADDRESS_KEY];
-  if (!addressModelInfo) {
-    return false;
-  }
-  NSMutableArray *thresholds = [addressModelInfo objectForKey:THRESHOLDS_KEY];
-  float threshold = [thresholds[0] floatValue];
   try {
-    predictedRaw = mat1::predictOnText(bytes, _weights, &_denseFeature[0]);
-    if (!predictedRaw[1]) {
-      return false;
+    const fbsdk::MTensor& res = fbsdk::predictOnMTML("integrity_detect", bytes, _weights, &_denseFeature[0]);
+    const float *res_data = res.data();
+    NSString *integrityType = INTEGRITY_NONE;
+    for (int i = 0; i < thresholds.count; i++) {
+      if ((float)res_data[i] >= (float)[thresholds[i] floatValue]) {
+        integrityType = integrityMapping[i];
+        break;
+      }
     }
-    return predictedRaw[1] >= threshold;
+    if (![integrityType isEqualToString:INTEGRITY_NONE]) {
+      return true;
+    }
   } catch (const std::exception &e) {
     return false;
   }
+  return false;
+}
+
++ (NSArray<NSString *> *)getIntegrityMapping
+{
+  return @[INTEGRITY_NONE, INTEGRITY_ADDRESS, INTEGRITY_HEALTH];
 }
 
 @end
